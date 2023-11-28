@@ -51,6 +51,10 @@ async def find_regions(search_term: str):
     </p>"""      
     try:
         ret_value = await service.find_regions(search_term=search_term)
+        if len(ret_value['Exceptions']) > 0:
+            ret_value['Exceptions'] = list(map(str, ret_value['Exceptions']))
+        else:
+            del ret_value['Exceptions']
         return ret_value
     except Exception as e:
         print(e)

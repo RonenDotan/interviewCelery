@@ -65,55 +65,50 @@ class Service:
 
     async def find_regions(self, search_term):
         categories = await self.managing_db.get_categories()
-        categories_ids = list(map(lambda x: x["id"], categories))
-        files_paths = await asyncio.gather(
+        categories = list(map(lambda x: {"id": x["id"], "region":x["region"]}, categories))
+        file_paths = await asyncio.gather(
             *(
-                self.storage.get_files_list_in_category(category_id)
-                for category_id in categories_ids
+                self.storage.get_files_list_in_category(category["id"])
+                for category in categories
             )
         )
+        file_paths_with_region = []
+        for i,paths in enumerate(file_paths):
+            for path in paths:
+                file_paths_with_region.append({"path" : str(path), "region": categories[i]["region"]})
+
+
         tasks = []
-        for files_path in files_paths:
+        regions = []
+        exceptions = []
+        for files_path_with_region in file_paths_with_region:
             tasks.append(
-                asyncio.create_task(self.search_in_files(files_path, search_term))
+                asyncio.create_task(self.search_in_file(files_path_with_region, search_term, regions, exceptions))
             )
         results = await asyncio.gather(*tasks)
+        return {"regions" : list(set(regions)), "Exceptions":exceptions}
 
-        regions = []
-        categoriesAsDict = {item["id"]: item for item in categories}
-        for i, category_id in enumerate(categories_ids):
-            if results[i]:
-                regions.append(categoriesAsDict[category_id]["region"])
-
-
-        return list(set(regions))
-
-    async def search_in_files(self, files_path, search_term):
-        for file_path in files_path:
-            ret_value = await self.search_in_file(file_path, search_term)
-            if ret_value:
-                return True
-        return False
-
-
-    async def search_in_file(self, path, search_term):
+    
+    async def search_in_file(self, file_path_with_region, search_term, regions, exceptions):
         try:
+            path = file_path_with_region['path']
+            region = file_path_with_region['region']
+            if region in regions:
+                return True
+            
             contents = await self.storage.get_file_content(path=path)
+            if region in regions:
+                return True
             for _, content in contents.items():
                 for i in range(0, content.shape[0]):
-                    if (
-                        len(
-                            list(
-                                filter(
-                                    lambda x: search_term in str(x),
-                                    content.iloc[i].tolist(),
-                                )
-                            )
-                        )
-                        > 0
-                    ):
-                        return True
+                    if (len(list(filter(lambda x: search_term in str(x),content.iloc[i].tolist(),))) > 0):
+                        if region in regions:
+                            return True
+                        else:
+                            regions.append(region)
+                            return True
             return False
         except Exception as e:
             print(e)
+            exceptions.append(e)
             return False
